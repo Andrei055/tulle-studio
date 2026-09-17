@@ -1,208 +1,38 @@
-import { describe, it, expect } from "vitest";
-import { defaultProject, parseProject } from "../src/domain/project";
-import { envelopeGeometry, buildGeometry } from "../src/geometry/envelope";
-import {
-  bounds,
-  area,
-  boolean,
-  centroid,
-  rect,
-} from "../src/geometry/polygons";
-import {
-  instance,
-  transform,
-  mirrored,
-  centered,
-  snapPoint,
-} from "../src/geometry/transforms";
-import { preset } from "../src/geometry/presets";
-import { extrude, meshAudit, heights } from "../src/manufacturing/model";
-import { projectFromJSON, svgFile, stlFile } from "../src/export/files";
-const base = () => structuredClone(defaultProject);
-describe("Manufacturing geometry", () => {
-  it.each(["straight", "wave"] as const)(
-    "preserves dimensions: %s",
-    (contour) => {
-      const e = { ...base().envelope, contour };
-      const b = bounds(envelopeGeometry(e).outer);
-      expect(b.width).toBeCloseTo(e.width, 2);
-      expect(b.height).toBeCloseTo(e.height + e.flapHeight + e.pocketHeight, 2);
-    },
-  );
-  it("has exactly specified straight border thickness", () => {
-    const e = {
-      ...base().envelope,
-      contour: "straight" as const,
-      flapShape: "straight" as const,
-    };
-    const g = envelopeGeometry(e);
-    expect(
-      area(boolean(g.border, rect(0, 60, e.borderWidth, 10), "intersection")),
-    ).toBeCloseTo(e.borderWidth * 10, 3);
-    expect(
-      area(
-        boolean(
-          g.border,
-          rect(e.borderWidth + 0.01, 60, 5, 10),
-          "intersection",
-        ),
-      ),
-    ).toBe(0);
-  });
-  it("clips motifs and removes PLA from full-width folds", () => {
-    const p = base();
-    p.ornaments = [
-      { ...instance("flower", 2, p.envelope.flapHeight), scaleX: 3, scaleY: 3 },
-    ];
-    const g = buildGeometry(p);
-    expect(
-      area(boolean(g.items[0].paths, g.allowed, "difference")),
-    ).toBeLessThan(0.001);
-    expect(area(boolean(g.bottom, g.keepOut, "intersection"))).toBe(0);
-    expect(area(boolean(g.top, g.keepOut, "intersection"))).toBe(0);
-  });
-  it.each(["x", "y"] as const)(
-    "exact mirror about %s including rotated asymmetric assets",
-    (axis) => {
-      const o = {
-        ...instance("branch", 32, 61),
-        rotation: 31,
-        scaleX: 1.3,
-        flipY: true,
-      };
-      const c = { x: 90, y: 87 };
-      const a = transform(o).flat(),
-        b = transform(mirrored(o, axis, c)).flat();
-      const expected = a.map((v) => ({
-        X: axis === "x" ? 2 * c.x - v.X : v.X,
-        Y: axis === "y" ? 2 * c.y - v.Y : v.Y,
-      }));
-      for (const v of expected)
-        expect(b.some((q) => Math.hypot(q.X - v.X, q.Y - v.Y) < 1e-8)).toBe(
-          true,
-        );
-    },
-  );
-  it("centers transformed bounds on actual asymmetric area centroid", () => {
-    const region = [
-      [
-        { X: 0, Y: 0 },
-        { X: 100, Y: 0 },
-        { X: 0, Y: 60 },
-      ],
-    ];
-    const c = centroid(region);
-    expect(c.x).toBeCloseTo(100 / 3, 7);
-    const o = centered({ ...instance("corner"), rotation: 32 }, region, "both"),
-      b = bounds(transform(o));
-    expect(b.cx).toBeCloseTo(c.x, 7);
-    expect(b.cy).toBeCloseTo(c.y, 7);
-  });
-  it("snaps to grid then closer guide", () => {
-    expect(snapPoint(10.3, 15.7, 1, [], 0.4)).toMatchObject({ x: 10, y: 16 });
-    expect(snapPoint(10.3, 15.7, 1, [{ x: 10.5, y: 15.5 }], 0.4)).toMatchObject(
-      { x: 10.5, y: 15.5 },
-    );
-  });
-  it.each(["floral", "minimal", "branches"] as const)(
-    "extrudes closed positive-volume meshes for %s",
-    (kind) => {
-      const p = preset(kind),
-        g = buildGeometry(p),
-        h = heights(p.print);
-      for (const side of ["bottom", "top"] as const) {
-        const mesh = extrude(g[side], h[side]);
-        const audit = meshAudit(mesh);
-        expect(audit.nonfinite).toBe(0);
-        expect(audit.degenerate).toBe(0);
-        expect(audit.badEdges).toBe(0);
-        expect(audit.volume).toBeCloseTo(area(g[side]) * h[side], 1);
-        mesh.dispose();
-      }
-    },
-  );
-  it("keeps holes open and extrudes expected volume", () => {
-    const paths = boolean(rect(0, 0, 20, 10), rect(2, 2, 16, 6), "difference");
-    const m = extrude(paths, 0.8);
-    expect(meshAudit(m)).toMatchObject({ badEdges: 0, degenerate: 0 });
-    expect(meshAudit(m).volume).toBeCloseTo(83.2, 3);
-    m.dispose();
-  });
-  it("rebuilds rather than CSS-scaling", () => {
-    const p = base(),
-      a = buildGeometry(p);
-    p.envelope.width = 220;
-    const b = buildGeometry(p);
-    expect(bounds(b.outer).width - bounds(a.outer).width).toBeCloseTo(40, 3);
-    expect(area(b.border)).not.toBe(area(a.border));
-  });
-  it("separates bottom and top inclusion", () => {
-    const p = base();
-    p.layers.border.visible = false;
-    p.ornaments = [{ ...instance("flower", 90, 85), top: false }];
-    const g = buildGeometry(p);
-    expect(area(g.bottom)).toBeGreaterThan(0);
-    expect(area(g.top)).toBe(0);
-  });
-  it("round-trips editable JSON and rejects corrupt projects", () => {
-    const p = preset("floral");
-    expect(projectFromJSON(JSON.stringify(p))).toEqual(p);
-    expect(() => parseProject({ ...p, version: 2 })).toThrow();
-    expect(() =>
-      projectFromJSON(
-        JSON.stringify({
-          ...p,
-          ornaments: [{ ...p.ornaments[0], assetId: "unknown" }],
-        }),
-      ),
-    ).toThrow();
-    expect(() =>
-      parseProject({ ...p, envelope: { ...p.envelope, width: -1 } }),
-    ).toThrow();
-  });
-  it("exports real mm SVG and binary STL with expected triangle length", () => {
-    const p = preset("minimal"),
-      svg = svgFile(p);
-    expect(svg).toContain('width="180mm"');
-    expect(svg).not.toContain("clipPath");
-    const data = stlFile(p);
-    expect(data.byteLength).toBe(84 + data.getUint32(80, true) * 50);
-  });
-  it("calculates resume nozzle Z independently of top mesh base", () => {
-    const h = heights(base().print);
-    expect(h.bottom).toBeCloseTo(0.4);
-    expect(h.topStart).toBeCloseTo(0.52);
-    expect(h.resume).toBeCloseTo(0.72);
-  });
+import {describe,it,expect,beforeAll} from 'vitest';
+import {Vector3} from 'three';
+import {defaultProject,parseProject} from '../src/domain/project';
+import {envelopeGeometry,buildGeometry} from '../src/geometry/envelope';
+import {bounds,area,boolean,centroid,rect} from '../src/geometry/polygons';
+import {instance,transform,mirrored,centered,snapPoint} from '../src/geometry/transforms';
+import {preset} from '../src/geometry/presets';
+import {foldingMatrix} from '../src/geometry/folding';
+import {extrude,meshAudit,heights} from '../src/manufacturing/model';
+import {projectFromJSON,svgFile,stlFile} from '../src/export/files';
+import {assets} from '../src/library';
+import {initializeKernel,manufacturingPaths} from '../src/manufacturing/kernel';
+beforeAll(async()=>{await initializeKernel();});
+const base=()=>structuredClone(defaultProject);
+describe('Five-part envelope',()=>{
+ it('has precisely one base, four attached flaps and four hinges',()=>{const g=envelopeGeometry(base().envelope);expect(g.panels.map(p=>p.id).sort()).toEqual(['base','bottom','left','right','top']);expect(g.panels.filter(p=>p.hinge)).toHaveLength(4);expect(area(g.base)).toBeCloseTo(180*85,1);});
+ it('matches requested base size and unfolded bounds at 0 degrees',()=>{const e={...base().envelope,layoutRotation:0};const g=envelopeGeometry(e),b=bounds(g.base);expect(b.width).toBeCloseTo(e.width,3);expect(b.height).toBeCloseTo(e.height,3);expect(g.width).toBeCloseTo(e.width+2*e.sideFlapDepth,3);expect(g.total).toBeCloseTo(e.flapHeight+e.height+e.bottomFlapDepth,3);});
+ it('has no overlapping panel interiors',()=>{const g=envelopeGeometry(base().envelope);for(let i=0;i<5;i++)for(let j=i+1;j<5;j++)expect(area(boolean(g.panels[i].outer,g.panels[j].outer,'intersection'))).toBeLessThan(.02);});
+ it('folds all four flaps into the base',()=>{const p=base(),g=envelopeGeometry(p.envelope);for(const panel of g.panels.filter(p=>p.hinge)){const matrix=foldingMatrix(panel,1,.9);const folded=panel.outer.map(r=>r.map(v=>{const q=new Vector3(v.X,-v.Y,0).applyMatrix4(matrix);return {X:q.x,Y:-q.y};}).reverse());expect(area(boolean(folded,g.base,'difference'))).toBeLessThan(.05);}});
+ it('raises a flap above the base during folding',()=>{const g=envelopeGeometry(base().envelope),left=g.panels.find(p=>p.id==='left')!;const m=foldingMatrix(left,.19,.9);expect(Math.max(...left.outer[0].map(v=>new Vector3(v.X,-v.Y,0).applyMatrix4(m).z))).toBeGreaterThan(30);});
+ it('protects every hinge across frame and drawing',()=>{const p=preset('peacock'),g=buildGeometry(p);for(const layer of [g.bottom,g.top])expect(area(boolean(layer,g.keepOut,'intersection'))).toBeLessThan(.005);expect(area(boolean(g.items[0].paths,g.allowed,'difference'))).toBeLessThan(.005);});
+ it('has specified border width on a straight base',()=>{const e={...base().envelope,layoutRotation:0,contour:'straight' as const};const g=envelopeGeometry(e),b=bounds(g.panels[0].solid);const sample=rect(b.x+8,b.y,10,e.borderWidth);expect(area(boolean(g.border,sample,'intersection'))).toBeCloseTo(10*e.borderWidth,2);});
+ it.each(['triangle','round','straight'] as const)('builds separate solid frames for %s flaps',flapShape=>{const p=base();p.envelope.flapShape=flapShape;const g=buildGeometry(p);const mesh=extrude(g.bottom,.4),audit=meshAudit(mesh);expect(audit.badEdges).toBe(0);expect(audit.degenerate).toBe(0);mesh.dispose();});
+ it('rebuilds dimensions parametrically',()=>{const a=base(),b=base();b.envelope.width=220;expect(area(envelopeGeometry(b.envelope).base)-area(envelopeGeometry(a.envelope).base)).toBeCloseTo(40*85,1);});
 });
-
-describe("Contour parameter variations", () => {
-  for (const flapShape of ["straight", "triangle", "round"] as const)
-    for (const contour of ["straight", "wave"] as const)
-      for (const phase of [0, 137, 270]) {
-        it(`${flapShape}/${contour}/phase=${phase} keeps nominal bounds and printable solids`, () => {
-          const p = base();
-          p.envelope = {
-            ...p.envelope,
-            flapShape,
-            contour,
-            phase,
-            width: 165,
-            height: 80,
-            pocketHeight: 60,
-            flapHeight: 40,
-            amplitude: 3,
-          };
-          const g = buildGeometry(p),
-            b = bounds(g.outer);
-          expect(b.width).toBeCloseTo(165, 2);
-          expect(b.height).toBeCloseTo(180, 2);
-          expect(area(boolean(g.bottom, g.keepOut, "intersection"))).toBe(0);
-          const m = extrude(g.bottom, 0.4);
-          const a = meshAudit(m);
-          expect(a.badEdges).toBe(0);
-          expect(a.degenerate).toBe(0);
-          m.dispose();
-        });
-      }
+describe('Ready-made whole drawings',()=>{
+ it('exposes complete sheets instead of primitive shapes',()=>{expect(assets.map(a=>a.id)).toEqual(['vienna','rose-garden','peacock']);for(const a of assets){expect(a.paths.flat().length).toBeGreaterThan(5000);const p=preset(a.id as 'vienna');expect(p.ornaments).toHaveLength(1);}});
+ it('moves the complete sheet as one editable object',()=>{const p=preset('peacock'),first=transform(p.ornaments[0])[0][0];p.ornaments[0].x+=13;p.ornaments[0].y-=7;const second=transform(p.ornaments[0])[0][0];expect(second.X-first.X).toBeCloseTo(13);expect(second.Y-first.Y).toBeCloseTo(-7);});
+ it.each(['vienna','rose-garden','peacock'] as const)('exports a closed printable mesh: %s',kind=>{const p=preset(kind),g=buildGeometry(p);const mesh=extrude(g.top,.4);const a=meshAudit(mesh);expect(a.nonfinite).toBe(0);expect(a.degenerate).toBe(0);expect(a.badEdges).toBe(0);const expectedVolume=area(manufacturingPaths(g.top))*.4;expect(Math.abs(a.volume-expectedVolume)/expectedVolume).toBeLessThan(.0001);mesh.dispose();},30000);
+ it('holds transformed drawings outside keep-out zones',()=>{const p=preset('peacock');Object.assign(p.ornaments[0],{scaleX:.75,scaleY:.75,rotation:27,flipX:true,x:70});const g=buildGeometry(p);expect(area(boolean(g.top,g.keepOut,'intersection'))).toBeLessThan(.005);const mesh=extrude(g.top,.4);expect(meshAudit(mesh)).toMatchObject({badEdges:0,degenerate:0,nonfinite:0});mesh.dispose();},30000);
+ it.each(['x','y'] as const)('preserves exact reflection around %s',axis=>{const o={...instance('branch',32,61),rotation:31};const c={x:90,y:87},a=transform(o).flat(),b=transform(mirrored(o,axis,c)).flat();for(const v of a){const x=axis==='x'?2*c.x-v.X:v.X,y=axis==='y'?2*c.y-v.Y:v.Y;expect(b.some(q=>Math.hypot(q.X-x,q.Y-y)<1e-8)).toBe(true);}});
+ it('centers mathematically and snaps to guides',()=>{const region=[[{X:0,Y:0},{X:100,Y:0},{X:0,Y:60}]],c=centroid(region),b=bounds(transform(centered(instance('leaf'),region,'both')));expect(b.cx).toBeCloseTo(c.x);expect(b.cy).toBeCloseTo(c.y);expect(snapPoint(10.3,15.7,1,[{x:10.5,y:15.5}],.4)).toMatchObject({x:10.5,y:15.5});});
+});
+describe('Manufacturing and persistence',()=>{
+ it('round-trips v2 and clearly rejects the obsolete three-panel schema',()=>{const p=preset('peacock');expect(projectFromJSON(JSON.stringify(p))).toEqual(p);expect(()=>projectFromJSON(JSON.stringify({...p,version:1}))).toThrow('трёхсекционной');expect(()=>parseProject({...p,envelope:{...p.envelope,width:-1}})).toThrow();});
+ it('uses full unfolded bounds for SVG and valid binary STL',async()=>{const p=preset('peacock'),g=buildGeometry(p);expect(await svgFile(p)).toContain(`width="${g.width}mm"`);const stl=await stlFile(p);expect(stl.byteLength).toBe(84+stl.getUint32(80,true)*50);},30000);
+ it('retains separate PLA layers and Z settings',()=>{const p=preset('peacock');p.layers.border.visible=false;p.ornaments[0].top=false;const g=buildGeometry(p);expect(area(g.bottom)).toBeGreaterThan(0);expect(area(g.top)).toBe(0);expect(heights(p.print).resume).toBeCloseTo(.72);});
 });

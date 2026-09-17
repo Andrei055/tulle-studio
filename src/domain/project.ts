@@ -4,8 +4,10 @@ export const envelopeSchema = z
   .object({
     width: mm(80, 300),
     height: mm(50, 150),
-    pocketHeight: mm(25, 140),
-    flapHeight: mm(20, 100),
+    bottomFlapDepth: mm(20, 150),
+    sideFlapDepth: mm(15, 150),
+    layoutRotation: mm(0, 90),
+    flapHeight: mm(20, 150),
     flapShape: z.enum(["straight", "triangle", "round"]),
     contour: z.enum(["straight", "wave"]),
     borderWidth: mm(0.8, 8),
@@ -17,10 +19,7 @@ export const envelopeSchema = z
     phase: mm(0, 360),
     density: z.number().int().min(8).max(48),
   })
-  .refine(
-    (e) => e.pocketHeight <= e.height,
-    "Карман не должен быть выше спинки",
-  );
+  ;
 export const instanceSchema = z.object({
   id: z.string().min(1).max(100),
   assetId: z.string().min(1).max(100),
@@ -52,7 +51,7 @@ export const printSchema = z.object({
 const layer = z.object({ visible: z.boolean(), locked: z.boolean() });
 export const projectSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     name: z.string().min(1).max(120),
     envelope: envelopeSchema,
     ornaments: z.array(instanceSchema).max(200),
@@ -92,20 +91,22 @@ export type Envelope = Project["envelope"];
 export type Instance = z.infer<typeof instanceSchema>;
 export type PrintProfile = z.infer<typeof printSchema>;
 export const defaultProject: Project = {
-  version: 1,
-  name: "Цветочное письмо",
+  version: 2,
+  name: "Венское кружево",
   envelope: {
     width: 180,
     height: 85,
-    pocketHeight: 65,
-    flapHeight: 45,
-    flapShape: "round",
+    bottomFlapDepth: 72,
+    sideFlapDepth: 58,
+    layoutRotation: 45,
+    flapHeight: 76,
+    flapShape: "triangle",
     contour: "wave",
-    borderWidth: 2,
-    edgeClearance: 1,
+    borderWidth: 1.2,
+    edgeClearance: 0,
     foldWidth: 3,
-    closingWidth: 3,
-    amplitude: 1.8,
+    closingWidth: 0,
+    amplitude: 1,
     waves: 12,
     phase: 0,
     density: 16,
@@ -138,7 +139,7 @@ export function parseProject(value: unknown): Project {
 }
 // Future LLM boundary: never accept meshes, code, or G-code as DesignSpec.
 export const designSpecSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   envelope: envelopeSchema,
   ornaments: z.array(instanceSchema).max(200),
   print: printSchema,

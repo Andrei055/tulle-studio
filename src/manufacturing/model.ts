@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { PrintProfile, Project } from "../domain/project";
 import { polygons, bounds, type Paths } from "../geometry/polygons";
+import { manufacturingSection } from "./kernel";
 import type { Geometry } from "../geometry/envelope";
 export function heights(p: PrintProfile) {
   const bottom =
@@ -20,22 +21,19 @@ export function extrude(
   height: number,
   z = 0,
 ): THREE.BufferGeometry {
-  const shapes = polygons(paths).map((p) => {
-    const s = new THREE.Shape(p.outer.map((v) => new THREE.Vector2(v.X, -v.Y)));
-    s.holes = p.holes.map(
-      (h) => new THREE.Path(h.map((v) => new THREE.Vector2(v.X, -v.Y))),
-    );
-    return s;
-  });
-  const g = new THREE.ExtrudeGeometry(shapes, {
-    depth: height,
-    bevelEnabled: false,
-    steps: 1,
-    curveSegments: 1,
-  });
-  g.translate(0, 0, z);
-  return g;
+  const section=manufacturingSection(paths);
+  const raw=section.extrude(height);
+  const solid=raw.setTolerance(.001);
+  try {
+    if(solid.status()!=="NoError")throw new Error("Не удалось построить замкнутую геометрию");
+    const mesh=solid.getMesh(), indexed=new THREE.BufferGeometry();
+    indexed.setAttribute("position",new THREE.BufferAttribute(mesh.vertProperties,3));
+    indexed.setIndex(new THREE.BufferAttribute(mesh.triVerts,1));
+    const geometry=indexed.toNonIndexed();indexed.dispose();
+    geometry.translate(0,0,z);geometry.computeVertexNormals();return geometry;
+  } finally {solid.delete();raw.delete();section.delete();}
 }
+
 export function manufacturingMeshes(
   p: Project,
   g: Geometry,

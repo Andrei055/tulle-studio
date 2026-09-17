@@ -1,141 +1,21 @@
-"use client";
-import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { useEditor } from "../state/editor";
-import type { Geometry } from "../geometry/envelope";
-import { extrude, heights } from "../manufacturing/model";
-export function Preview3D({ geometry: g }: { geometry: Geometry }) {
-  const mount = useRef<HTMLDivElement>(null),
-    p = useEditor((s) => s.project);
-  const [explode, setExplode] = useState(false),
-    [error, setError] = useState("");
-  useEffect(() => {
-    const el = mount.current;
-    if (!el) return;
-    let renderer: THREE.WebGLRenderer;
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    } catch {
-      setError(
-        "WebGL недоступен в этом браузере. SVG и STL доступны через экспорт.",
-      );
-      return;
-    }
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#eae7e2");
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 3000),
-      controls = new OrbitControls(camera, renderer.domElement);
-    camera.position.set(100, -170, 340);
-    controls.target.set(0, 0, 0);
-    controls.enableDamping = true;
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    el.appendChild(renderer.domElement);
-    const h = heights(p.print),
-      group = new THREE.Group();
-    group.position.set(-p.envelope.width / 2, g.total / 2, 0);
-    scene.add(group);
-    const add = (
-      paths: typeof g.outer,
-      depth: number,
-      z: number,
-      color: string,
-      opacity = 1,
-    ) => {
-      const mesh = new THREE.Mesh(
-        extrude(paths, depth, z),
-        new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.65,
-          metalness: 0.05,
-          transparent: opacity < 1,
-          opacity,
-          side: THREE.DoubleSide,
-        }),
-      );
-      group.add(mesh);
-    };
-    if (p.layers.bottom.visible) add(g.bottom, h.bottom, 0, "#ba8f9b");
-    if (p.layers.top.visible)
-      add(g.top, h.top, h.topStart + (explode ? 18 : 0), "#fff6f0");
-    if (p.layers.fabric.visible) {
-      add(g.outer, 0.015, h.bottom + (explode ? 9 : 0), "#a7b4a7", 0.18);
-      const lines: number[] = [];
-      for (let x = 0; x <= p.envelope.width; x += 3)
-        lines.push(
-          x,
-          -p.envelope.flapHeight,
-          h.bottom + (explode ? 9 : 0),
-          x,
-          -g.total,
-          h.bottom + (explode ? 9 : 0),
-        );
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
-      group.add(
-        new THREE.LineSegments(
-          geom,
-          new THREE.LineBasicMaterial({
-            color: "#819781",
-            transparent: true,
-            opacity: 0.2,
-          }),
-        ),
-      );
-    }
-    scene.add(new THREE.HemisphereLight("#fff8ee", "#776d77", 3));
-    const light = new THREE.DirectionalLight("#ffffff", 3);
-    light.position.set(50, 100, 300);
-    scene.add(light);
-    const resize = () => {
-      const w = el.clientWidth,
-        h = el.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    };
-    const ro = new ResizeObserver(resize);
-    ro.observe(el);
-    resize();
-    let frame = 0;
-    const animate = () => {
-      controls.update();
-      renderer.render(scene, camera);
-      frame = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => {
-      cancelAnimationFrame(frame);
-      ro.disconnect();
-      controls.dispose();
-      scene.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
-          o.geometry.dispose();
-          const mats = Array.isArray(o.material) ? o.material : [o.material];
-          mats.forEach((m) => m.dispose());
-        }
-      });
-      renderer.dispose();
-      renderer.domElement.remove();
-    };
-  }, [p, g, explode]);
-  return (
-    <div className="preview3d">
-      <div ref={mount} className="three-mount" />
-      {error && <p className="webgl-error">{error}</p>}
-      <div className="preview-caption">
-        <span>
-          Печатная развёртка · толщина {heights(p.print).total.toFixed(2)} мм
-        </span>
-        <button onClick={() => setExplode(!explode)}>
-          {explode ? "Собрать слои" : "Разнести слои"}
-        </button>
-      </div>
-      <div className="three-hint">
-        Перетаскивание — вращение · колесо — масштаб
-        <br />
-        Розовый: нижний PLA · сетка: ткань · белый: верхний PLA
-      </div>
-    </div>
-  );
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import * as THREE from 'three';
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
+import {useEditor} from '../state/editor';
+import type {Geometry} from '../geometry/envelope';
+import {boolean} from '../geometry/polygons';
+import {extrude,heights} from '../manufacturing/model';
+import {initializeKernel} from '../manufacturing/kernel';
+import {foldingMatrix} from '../geometry/folding';
+export function Preview3D({geometry:g}:{geometry:Geometry}){const mount=useRef<HTMLDivElement>(null),p=useEditor(s=>s.project),[fold,setFold]=useState(0),[explode,setExplode]=useState(false),[error,setError]=useState(''),[ready,setReady]=useState(false);const progress=useRef(fold);progress.current=fold;
+ useEffect(()=>{let live=true;initializeKernel().then(()=>{if(live)setReady(true);}).catch(()=>{if(live)setError('Не удалось загрузить 3D. Обновите страницу и попробуйте ещё раз.');});return()=>{live=false;};},[]);
+ useEffect(()=>{const el=mount.current;if(!el||!ready)return;let renderer:THREE.WebGLRenderer;try{renderer=new THREE.WebGLRenderer({antialias:true});}catch{setError('WebGL недоступен. SVG и STL по-прежнему можно экспортировать.');return;}
+ const scene=new THREE.Scene();scene.background=new THREE.Color('#e9e7e1');const camera=new THREE.PerspectiveCamera(37,1,.1,3000),controls=new OrbitControls(camera,renderer.domElement);const span=Math.max(g.width,g.total);camera.position.set(span*.2,-span*.65,span*1.9);controls.target.set(0,0,0);controls.enableDamping=true;renderer.setPixelRatio(Math.min(devicePixelRatio,2));el.appendChild(renderer.domElement);
+ const root=new THREE.Group();root.position.set(-g.center.X,g.center.Y,0);scene.add(root);const h=heights(p.print);const parts=g.panels.map(panel=>{const group=new THREE.Group();group.matrixAutoUpdate=false;root.add(group);const add=(paths:typeof g.outer,depth:number,z:number,color:string,opacity=1)=>{if(!paths.length)return;const mesh=new THREE.Mesh(extrude(paths,depth,z),new THREE.MeshStandardMaterial({color,roughness:.75,metalness:0,transparent:opacity<1,opacity,side:THREE.DoubleSide,depthWrite:opacity===1}));group.add(mesh);};
+ if(p.layers.bottom.visible)add(boolean(g.bottom,panel.outer,'intersection'),h.bottom,0,'#d4b8b0');if(p.layers.top.visible)add(boolean(g.top,panel.outer,'intersection'),h.top,h.topStart+(explode?9:0),'#fff6e5');if(p.layers.fabric.visible)add(panel.outer,.01,h.bottom+(explode?4.5:0),'#514c50',.22);return {panel,group};});
+ scene.add(new THREE.HemisphereLight('#fff9f2','#6e6870',2.7));const light=new THREE.DirectionalLight('#ffffff',2.5);light.position.set(-100,150,300);scene.add(light);
+ const resize=()=>{renderer.setSize(el.clientWidth,el.clientHeight);camera.aspect=el.clientWidth/el.clientHeight;camera.updateProjectionMatrix();};const observer=new ResizeObserver(resize);observer.observe(el);resize();let frame=0;const animate=()=>{for(const part of parts)part.group.matrix.copy(foldingMatrix(part.panel,progress.current,h.total+.25));controls.update();renderer.render(scene,camera);frame=requestAnimationFrame(animate);};animate();return()=>{cancelAnimationFrame(frame);observer.disconnect();controls.dispose();scene.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();const m=Array.isArray(o.material)?o.material:[o.material];m.forEach(x=>x.dispose());}});renderer.dispose();renderer.domElement.remove();};
+ },[p,g,explode,ready]);
+ return <div className="preview3d"><div ref={mount} className="three-mount"/>{!ready&&!error&&<p className="webgl-error">Подготавливаем кружево в 3D…</p>}{error&&<p className="webgl-error">{error}</p>}<div className="preview-caption"><span>{fold===0?'Печатная развёртка':fold===1?'Сложенный конверт':'Складывание клапанов'} · 5 частей</span><button disabled={fold>0} onClick={()=>setExplode(!explode)}>{explode?'Собрать PLA-слои':'Разнести PLA-слои'}</button></div><div className="fold-controls"><button className={fold===0?'active':''} onClick={()=>setFold(0)}>Развернуть</button><button className={fold===1?'active':''} onClick={()=>{setExplode(false);setFold(1);}}>Сложить конверт</button><label>Сгиб<input aria-label="Степень складывания" type="range" min="0" max="100" value={fold*100} onChange={ev=>{setExplode(false);setFold(Number(ev.target.value)/100);}}/>{Math.round(fold*100)}%</label></div><div className="three-hint">Боковые → нижний → верхний · схема движения без расчёта деформации ткани<br/>STL всегда экспортируется в развёрнутом виде.</div></div>;
 }

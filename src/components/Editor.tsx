@@ -43,16 +43,16 @@ import {
   profileFile,
 } from "../export/files";
 const tabs = [
-  ["shape", "Форма", PenTool],
-  ["library", "Орнаменты", Flower2],
+  ["library", "Дизайн", Flower2],
+  ["shape", "Конверт", PenTool],
   ["layers", "Слои", LayersIcon],
   ["print", "Печать", Printer],
   ["reference", "Референс", ImageIcon],
 ] as const;
 export default function Editor() {
   const s = useEditor(),
-    [tab, setTab] = useState<string>("shape"),
-    [target, setTarget] = useState<TargetRegion>("back"),
+    [tab, setTab] = useState<string>("library"),
+    [target, setTarget] = useState<TargetRegion>("base"),
     [exportOpen, setExportOpen] = useState(false),
     [side, setSide] = useState<"all" | "bottom" | "top">("all"),
     [toast, setToast] = useState(""),
@@ -83,15 +83,6 @@ export default function Editor() {
           JSON.stringify(st.project, null, 2),
           "application/json",
         );
-      } else if (ev.key === "Delete" || ev.key === "Backspace") {
-        ev.preventDefault();
-        st.commit((p) => {
-          if (!p.layers.ornaments.locked)
-            p.ornaments = p.ornaments.filter(
-              (o) => !st.selection.includes(o.id) || o.locked,
-            );
-        });
-        st.select([]);
       } else if (ev.key === "Escape") {
         st.select([]);
         setExportOpen(false);
@@ -103,7 +94,7 @@ export default function Editor() {
         st.commit((p) => {
           p.ornaments.forEach((o) => {
             if (
-              st.selection.includes(o.id) &&
+              (st.selection.includes(o.id) || p.ornaments.length === 1) &&
               !o.locked &&
               !p.layers.ornaments.locked
             ) {
@@ -120,28 +111,7 @@ export default function Editor() {
   }, []);
   const g = useMemo(() => buildGeometry(s.project), [s.project]);
   const warnings = useMemo(() => preflight(s.project, g), [s.project, g]);
-  const region = useMemo(() => {
-    const e = s.project.envelope;
-    if (target === "envelope") return g.outer;
-    if (target === "allowed") return g.allowed;
-    if (target === "object") {
-      const o = s.project.ornaments.find((o) => o.id === s.selection[0]);
-      return o ? transform(o) : g.allowed;
-    }
-    const y =
-      target === "flap"
-        ? 0
-        : target === "back"
-          ? e.flapHeight
-          : e.flapHeight + e.height;
-    const h =
-      target === "flap"
-        ? e.flapHeight
-        : target === "back"
-          ? e.height
-          : e.pocketHeight;
-    return boolean(g.allowed, rect(0, y, e.width, h), "intersection");
-  }, [target, g, s.project, s.selection]);
+  const region = g.base;
   async function openProject(file: File) {
     try {
       if (file.size > 8000000) throw new Error("Проект больше 8 МБ");
@@ -153,17 +123,17 @@ export default function Editor() {
       });
     }
   }
-  function exportFile(type: "svg" | "stl" | "profile") {
+  async function exportFile(type: "svg" | "stl" | "profile") {
     try {
       if (type === "svg") {
         const svgSide = side === "all" ? "top" : side;
         download(
           `envelope-${svgSide}.svg`,
-          svgFile(s.project, svgSide),
+          await svgFile(s.project, svgSide),
           "image/svg+xml",
         );
       } else if (type === "stl") {
-        const stl = stlFile(s.project, side);
+        const stl = await stlFile(s.project, side);
         download(
           `envelope-${side}.stl`,
           stl.buffer as ArrayBuffer,
@@ -200,7 +170,7 @@ export default function Editor() {
                 });
             }}
           />
-          <span>Конструктор конвертов · v0.1</span>
+          <span>Конверт из пяти частей · v0.2</span>
         </div>
         <div className="history-controls">
           <button
@@ -305,23 +275,23 @@ export default function Editor() {
                 onClick={() => s.set({ mode: "2d" })}
               >
                 <PenTool size={15} />
-                2D редактор
+                Развёртка
               </button>
               <button
                 className={s.mode === "3d" ? "active" : ""}
                 onClick={() => s.set({ mode: "3d" })}
               >
                 <Box size={15} />
-                3D модель
+                3D и складывание
               </button>
             </div>
             <span className="millimeter-badge">мм</span>
           </div>
           <div className="canvas-heading">
             <div>
-              <span className="eyebrow">ВАША КОМПОЗИЦИЯ</span>
+              <span className="eyebrow">ОСНОВАНИЕ И ЧЕТЫРЕ ЛЕПЕСТКА</span>
               <h1>
-                Сделано <em>с чувством.</em>
+                Готовое <em>кружевное полотно.</em>
               </h1>
             </div>
             <span className="project-size">
@@ -438,7 +408,7 @@ export default function Editor() {
               Свободный сгиб
             </span>
             <span className="legend-last">
-              Развёртка {s.project.envelope.width} × {g.total} мм
+              На столе {g.width.toFixed(1)} × {g.total.toFixed(1)} мм
             </span>
           </div>
         </main>
@@ -448,8 +418,7 @@ export default function Editor() {
       </div>
       <footer className="statusbar">
         <span>
-          <Check size={13} /> Булева обрезка активна ·{" "}
-          {s.project.ornaments.length} объектов
+          <Check size={13} /> 5 частей · 4 защищённых сгиба
         </span>
         <span>{warnings[0] || "Тканевые шарниры свободны от PLA"}</span>
         <span>Локальный проект · JSON</span>

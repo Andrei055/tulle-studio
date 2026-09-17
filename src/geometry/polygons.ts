@@ -102,13 +102,11 @@ export function polygons(paths: Paths): Polygon[] {
   return out;
 }
 export function bounds(paths: Paths) {
-  const pts = paths.flat();
-  if (!pts.length) return { x: 0, y: 0, width: 0, height: 0, cx: 0, cy: 0 };
-  const x = Math.min(...pts.map((p) => p.X)),
-    y = Math.min(...pts.map((p) => p.Y));
-  const width = Math.max(...pts.map((p) => p.X)) - x,
-    height = Math.max(...pts.map((p) => p.Y)) - y;
-  return { x, y, width, height, cx: x + width / 2, cy: y + height / 2 };
+  let x=Infinity,y=Infinity,right=-Infinity,bottom=-Infinity;
+  for(const ring of paths)for(const p of ring){x=Math.min(x,p.X);y=Math.min(y,p.Y);right=Math.max(right,p.X);bottom=Math.max(bottom,p.Y);}
+  if(!Number.isFinite(x))return {x:0,y:0,width:0,height:0,cx:0,cy:0};
+  const width=right-x,height=bottom-y;
+  return {x,y,width,height,cx:x+width/2,cy:y+height/2};
 }
 export function centroid(paths: Paths) {
   let a = 0,

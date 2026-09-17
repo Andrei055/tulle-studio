@@ -44,7 +44,7 @@ export const useEditor = create<Editor>((set, get) => ({
   future: [],
   selection: [],
   mode: "2d",
-  grid: true,
+  grid: false,
   guides: true,
   snap: true,
   gridStep: 1,
@@ -131,5 +131,5 @@ export const useEditor = create<Editor>((set, get) => ({
   },
 }));
 export function initialize() {
-  useEditor.setState({ project: preset("floral") });
+  useEditor.setState({ project: preset("vienna") });
 }

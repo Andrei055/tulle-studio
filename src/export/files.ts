@@ -8,18 +8,23 @@ import {
   meshAudit,
   heights,
 } from "../manufacturing/model";
+import { initializeKernel,manufacturingPaths } from "../manufacturing/kernel";
 import { Mesh } from "three";
 export function projectFromJSON(text: string) {
   if (text.length > 8000000) throw new Error("Файл проекта слишком большой");
-  const p = parseProject(JSON.parse(text));
+  const data=JSON.parse(text);
+  if(data.version===1)throw new Error("Это проект старой трёхсекционной конструкции (v1). Он не изменён: сохраните его отдельно. Для конверта с четырьмя клапанами выберите готовый дизайн в новой версии.");
+  const p = parseProject(data);
   p.ornaments.forEach((o) => assetById(o.assetId));
   return p;
 }
-export function svgFile(p: Project, side: "bottom" | "top" = "top") {
+export async function svgFile(p: Project, side: "bottom" | "top" = "top") {
+  await initializeKernel();
   const g = buildGeometry(p);
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${p.envelope.width}mm" height="${g.total}mm" viewBox="0 0 ${p.envelope.width} ${g.total}"><title>Tulle Studio — ${side} PLA, mm</title><path fill="black" fill-rule="nonzero" d="${pathData(g[side])}"/></svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}mm" height="${g.total}mm" viewBox="0 0 ${g.width} ${g.total}"><title>Tulle Studio — ${side} PLA, mm</title><path fill="black" fill-rule="nonzero" d="${pathData(manufacturingPaths(g[side]))}"/></svg>`;
 }
-export function stlFile(p: Project, side: "all" | "bottom" | "top" = "all") {
+export async function stlFile(p: Project, side: "all" | "bottom" | "top" = "all") {
+  await initializeKernel();
   const group = manufacturingMeshes(p, buildGeometry(p), side);
   if (!group.children.length) throw new Error("Нет геометрии PLA");
   try {
@@ -51,7 +56,7 @@ export function profileFile(p: Project) {
         "Импортировать STL в мм с сохранением исходных координат Z.",
         "Пауза после слоя " + p.print.pauseAfterLayer + ".",
         "Уложить ткань; настроить продолжение в слайсере. STL не содержит пауз.",
-        "Проверить купон, соединение боковин и материал до печати изделия.",
+        "Проверить купон ткани и зазоры четырёх сгибов до печати изделия.",
       ],
     },
     null,

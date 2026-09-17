@@ -1,6 +1,6 @@
 {
   "name": "tulle-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,11 +8,14 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "predev": "node scripts/prepare-kernel.mjs",
+    "prebuild": "node scripts/prepare-kernel.mjs"
   },
   "dependencies": {
     "clipper-lib": "^6.4.2",
     "lucide-react": "^0.468.0",
+    "manifold-3d": "^3.5.3",
     "next": "^16.3.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
