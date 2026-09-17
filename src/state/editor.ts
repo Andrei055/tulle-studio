@@ -45,7 +45,7 @@ export const useEditor = create<Editor>((set, get) => ({
   selection: [],
   mode: "2d",
   grid: false,
-  guides: true,
+  guides: false,
   snap: true,
   gridStep: 1,
   zoom: 1,

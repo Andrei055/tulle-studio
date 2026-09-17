@@ -49,11 +49,19 @@ export const printSchema = z.object({
   resumeAuto: z.boolean(),
 });
 const layer = z.object({ visible: z.boolean(), locked: z.boolean() });
+export const letteringSchema = z.object({
+  enabled: z.boolean(), text: z.string().max(100),
+  font: z.literal("great-vibes"), size: mm(6,32),
+  x: mm(-120,120), y: mm(-60,60), rotation: mm(-180,180),
+  stroke: mm(0,.8), clearance: mm(1,10),
+});
+export const defaultLettering = {enabled:true,text:"С любовью",font:"great-vibes" as const,size:20,x:0,y:0,rotation:0,stroke:.18,clearance:3};
 export const projectSchema = z
   .object({
     version: z.literal(2),
     name: z.string().min(1).max(120),
     envelope: envelopeSchema,
+    lettering: letteringSchema.default({...defaultLettering,enabled:false}),
     ornaments: z.array(instanceSchema).max(200),
     print: printSchema,
     layers: z.object({
@@ -106,11 +114,12 @@ export const defaultProject: Project = {
     edgeClearance: 0,
     foldWidth: 3,
     closingWidth: 0,
-    amplitude: 1,
-    waves: 12,
+    amplitude: 1.5,
+    waves: 6,
     phase: 0,
     density: 16,
   },
+  lettering: {...defaultLettering},
   ornaments: [],
   print: {
     printer: "Пользовательский FDM",

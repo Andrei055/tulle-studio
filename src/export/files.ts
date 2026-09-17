@@ -21,11 +21,14 @@ export function projectFromJSON(text: string) {
 export async function svgFile(p: Project, side: "bottom" | "top" = "top") {
   await initializeKernel();
   const g = buildGeometry(p);
+  if(g.lettering.missing.length)throw new Error("Замените неподдерживаемые символы в надписи: "+g.lettering.missing.join(" "));
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}mm" height="${g.total}mm" viewBox="0 0 ${g.width} ${g.total}"><title>Tulle Studio — ${side} PLA, mm</title><path fill="black" fill-rule="nonzero" d="${pathData(manufacturingPaths(g[side]))}"/></svg>`;
 }
 export async function stlFile(p: Project, side: "all" | "bottom" | "top" = "all") {
   await initializeKernel();
-  const group = manufacturingMeshes(p, buildGeometry(p), side);
+  const g=buildGeometry(p);
+  if(g.lettering.missing.length)throw new Error("Замените неподдерживаемые символы в надписи: "+g.lettering.missing.join(" "));
+  const group = manufacturingMeshes(p, g, side);
   if (!group.children.length) throw new Error("Нет геометрии PLA");
   try {
     group.children.forEach((m) => {

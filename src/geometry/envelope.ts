@@ -1,14 +1,23 @@
 import type { Envelope, Project } from '../domain/project';
 import { boolean, offset, union, rect, positive, area, bounds, type Point, type Paths } from './polygons';
+import {letteringGeometry} from './lettering';
 import { transform } from './transforms';
 export type PanelId='base'|'top'|'right'|'bottom'|'left';
 export type Panel={id:PanelId;name:string;outer:Paths;solid:Paths;hinge?:[Point,Point]};
 const names={base:'Основание',top:'Верхний клапан',right:'Правый клапан',bottom:'Нижний клапан',left:'Левый клапан'};
-function edge(a:Point,b:Point,e:Envelope):Point[]{const dx=b.X-a.X,dy=b.Y-a.Y,len=Math.hypot(dx,dy);const waves=Math.max(1,Math.round(len/e.width*e.waves)),n=e.contour==='wave'?waves*e.density:1;return Array.from({length:n},(_,i)=>{const t=i/n,fade=Math.min(1,t*10,(1-t)*10),d=e.contour==='wave'?e.amplitude*(1-Math.cos(2*Math.PI*waves*t+e.phase*Math.PI/180))/2*fade:0;return {X:a.X+dx*t-dy/len*d,Y:a.Y+dy*t+dx/len*d};});}
+// Smooth endpoints and a wavelength-dependent amplitude cap prevent sharp teeth.
+export function waveDisplacement(t:number,length:number,e:Envelope){
+ if(e.contour!=='wave')return 0;
+ const count=Math.max(1,Math.round(length/e.width*e.waves));
+ const amplitude=Math.min(e.amplitude,length/count*.075);
+ const ease=(v:number)=>{const x=Math.max(0,Math.min(1,v));return x*x*(3-2*x);};
+ return amplitude*(1-Math.cos(2*Math.PI*count*t+e.phase*Math.PI/180))/2*ease(t/.12)*ease((1-t)/.12);
+}
+function edge(a:Point,b:Point,e:Envelope):Point[]{const dx=b.X-a.X,dy=b.Y-a.Y,len=Math.hypot(dx,dy);const count=Math.max(1,Math.round(len/e.width*e.waves)),n=e.contour==='wave'?Math.max(48,count*32):1;return Array.from({length:n},(_,i)=>{const t=i/n,d=waveDisplacement(t,len,e);return {X:a.X+dx*t-dy/len*d,Y:a.Y+dy*t+dx/len*d};});}
 function flap(a:Point,b:Point,depth:number,e:Envelope):Paths{const dx=b.X-a.X,dy=b.Y-a.Y,len=Math.hypot(dx,dy),nx=dy/len,ny=-dx/len;const tip={X:(a.X+b.X)/2+nx*depth,Y:(a.Y+b.Y)/2+ny*depth};
  if(e.flapShape==='triangle')return [positive([...edge(a,tip,e),...edge(tip,b,e),b])];
  if(e.flapShape==='straight'){const p={X:a.X+dx*.18+nx*depth,Y:a.Y+dy*.18+ny*depth},q={X:b.X-dx*.18+nx*depth,Y:b.Y-dy*.18+ny*depth};return [positive([...edge(a,p,e),...edge(p,q,e),...edge(q,b,e),b])];}
- const n=Math.max(48,e.waves*e.density);const pts=Array.from({length:n+1},(_,i)=>{const t=i/n,bulge=Math.sin(Math.PI*t),fade=Math.min(1,t*10,(1-t)*10,Math.abs(t-.5)*10);const wave=e.contour==='wave'?e.amplitude*(1-Math.cos(2*Math.PI*e.waves*t+e.phase*Math.PI/180))/2*fade:0;return {X:a.X+dx*t+nx*(depth*bulge-wave),Y:a.Y+dy*t+ny*(depth*bulge-wave)};});return [positive(pts)];
+ const n=Math.max(48,e.waves*e.density);const pts=Array.from({length:n+1},(_,i)=>{const t=i/n,bulge=Math.sin(Math.PI*t),fade=Math.min(1,t*10,(1-t)*10,Math.abs(t-.5)*10);const wave=waveDisplacement(t,len+depth,e);return {X:a.X+dx*t+nx*(depth*bulge-wave),Y:a.Y+dy*t+ny*(depth*bulge-wave)};});return [positive(pts)];
 }
 export function envelopeGeometry(e:Envelope){const w=e.width/2,h=e.height/2;const corners=[{X:-w,Y:-h},{X:w,Y:-h},{X:w,Y:h},{X:-w,Y:h}];const ids=['top','right','bottom','left'] as const;const depths=[e.flapHeight,e.sideFlapDepth,e.bottomFlapDepth,e.sideFlapDepth];
  const local=[{id:'base' as PanelId,outer:rect(-w,-h,e.width,e.height),hinge:undefined as [Point,Point]|undefined},...ids.map((id,i)=>({id,outer:flap(corners[i],corners[(i+1)%4],depths[i],e),hinge:[corners[i],corners[(i+1)%4]] as [Point,Point]}))];
@@ -21,8 +30,8 @@ export function envelopeGeometry(e:Envelope){const w=e.width/2,h=e.height/2;cons
  return {outer,border,allowed,keepOut,foldZones,panels,base:panels[0].outer,center:world({X:0,Y:0}),width:box.width,total:box.height};
 }
 export function contour(e:Envelope){return envelopeGeometry(e).outer;}
-export function buildGeometry(p:Project){const g=envelopeGeometry(p.envelope);const items=p.ornaments.map(o=>{const raw=transform(o);return {id:o.id,raw,paths:boolean(raw,g.allowed,'intersection')};});const visible=items.filter(i=>p.ornaments.find(o=>o.id===i.id)?.visible);const border=p.layers.border.visible?g.border:[];
- const make=(side:'bottom'|'top')=>union(border,...(p.layers.ornaments.visible?visible.filter(i=>p.ornaments.find(o=>o.id===i.id)?.[side]).map(i=>i.paths):[]));const bottom=make('bottom'),top=make('top');const warnings:string[]=[];if(!bottom.length&&!top.length)warnings.push('Нет геометрии PLA для экспорта.');
+export function buildGeometry(p:Project){const g=envelopeGeometry(p.envelope),lettering=letteringGeometry(p,g.base,g.center);const drawingAllowed=boolean(g.allowed,lettering.clear,'difference');const items=p.ornaments.map(o=>{const raw=transform(o);return {id:o.id,raw,paths:boolean(raw,drawingAllowed,'intersection')};});const visible=items.filter(i=>p.ornaments.find(o=>o.id===i.id)?.visible);const border=p.layers.border.visible?g.border:[];
+ const make=(side:'bottom'|'top')=>union(border,lettering.paths,...(p.layers.ornaments.visible?visible.filter(i=>p.ornaments.find(o=>o.id===i.id)?.[side]).map(i=>i.paths):[]));const bottom=make('bottom'),top=p.ornaments.every(o=>o.bottom===o.top)?bottom:make('top');const warnings:string[]=[];if(!bottom.length&&!top.length)warnings.push('Нет геометрии PLA для экспорта.');
  if(p.ornaments.length===1){const b=bounds(items[0].raw),a=bounds(g.allowed);if(b.x>a.x||b.y>a.y||b.x+b.width<a.x+a.width||b.y+b.height<a.y+a.height)warnings.push('Полотно не покрывает край развёртки. Уменьшите сдвиг или увеличьте масштаб.');}
- return {...g,items,bottom,top,warnings};}
+ if(lettering.missing.length)warnings.push('Шрифт не содержит: '+lettering.missing.join(' '));if(lettering.fitted)warnings.push('Надпись автоматически вписана в основание.');return {...g,drawingAllowed,lettering,items,bottom,top,warnings};}
 export type Geometry=ReturnType<typeof buildGeometry>;

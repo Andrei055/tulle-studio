@@ -17,6 +17,7 @@ import {
   Box,
   PenTool,
   Flower2,
+  Type,
   Layers as LayersIcon,
   Printer,
   Image as ImageIcon,
@@ -30,6 +31,7 @@ import { boolean, rect } from "../geometry/polygons";
 import { transform } from "../geometry/transforms";
 import { preflight } from "../manufacturing/model";
 import { Parameters, PrintSettings } from "./Parameters";
+import { Lettering } from "./Lettering";
 import { Library } from "./Library";
 import { Layers, Reference } from "./Layers";
 import { Properties, type TargetRegion } from "./Properties";
@@ -45,6 +47,7 @@ import {
 const tabs = [
   ["library", "Дизайн", Flower2],
   ["shape", "Конверт", PenTool],
+  ["lettering", "Надпись", Type],
   ["layers", "Слои", LayersIcon],
   ["print", "Печать", Printer],
   ["reference", "Референс", ImageIcon],
@@ -259,6 +262,8 @@ export default function Editor() {
             <Parameters />
           ) : tab === "library" ? (
             <Library />
+          ) : tab === "lettering" ? (
+            <Lettering />
           ) : tab === "layers" ? (
             <Layers />
           ) : tab === "print" ? (
