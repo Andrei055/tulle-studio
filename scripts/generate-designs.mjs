@@ -10,7 +10,7 @@ function stroke(points,width=.65,closed=false){const co=new C.ClipperOffset(2,40
 function normalize(paths){const c=new C.Clipper();c.StrictlySimple=true;c.AddPaths(paths,C.PolyType.ptSubject,true);const out=[];c.Execute(C.ClipType.ctUnion,out,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return C.Clipper.CleanPolygons(out,12);}
 const move=(paths,x,y,angle=0,scale=1)=>{const c=Math.cos(angle),s=Math.sin(angle);return paths.map(r=>r.map(p=>V(Math.round((p.X*c-p.Y*s)*scale+x*S),Math.round((p.X*s+p.Y*c)*scale+y*S))));};
 function petal(length,width){return [...bezier(V(0,0),V(length*.35,-width),V(length*.9,-width*.65),V(length,0),12),...bezier(V(length,0),V(length*.9,width*.65),V(length*.35,width),V(0,0),12).slice(1)];}
-function rosette(r=16){let paths=[...stroke(circle(3.3),.75,true),...stroke(circle(r*.65),.65,true)];for(let i=0;i<12;i++){const a=i*Math.PI/6;paths.push(...move(stroke(petal(r-2,3.4),.65,true),...Object.values(polar(3,a)),a));}for(let i=0;i<24;i++){let a=i*Math.PI/12;paths.push(...move(stroke(circle(1.0,12),.55,true),...Object.values(polar(r+1.8,a))));}return normalize(paths);}
+function rosette(r=16){let paths=[...stroke(circle(3.3),.75,true),...stroke(circle(r*.65),.65,true)];for(let i=0;i<12;i++){const a=i*Math.PI/6;paths.push(...move(stroke(petal(r-2,3.4),.65,true),...Object.values(polar(3,a)),a));}return normalize(paths);}
 function curl(){let p=[...bezier(V(0,0),V(16,-16),V(31,-10),V(29,2)),...bezier(V(29,2),V(25,18),V(8,11),V(15,2)).slice(1),...bezier(V(15,2),V(19,-3),V(25,1),V(20,5)).slice(1)];let out=stroke(p,.9);for(let i=0;i<5;i++){let t=.15+i*.14;const v=p[Math.floor(t*(p.length-1))];out.push(...move(stroke(petal(7,2.1),.65,true),v.X,v.Y,-1.4+i*.35));}return normalize(out);}
 function paisley(){const p=[...bezier(V(0,-18),V(17,-7),V(17,16),V(1,18)),...bezier(V(1,18),V(-17,18),V(-17,-6),V(-3,-6)).slice(1),...bezier(V(-3,-6),V(5,-5),V(5,-13),V(0,-18)).slice(1)];let out=stroke(p,.85,true);out.push(...move(stroke(p,.6,true),0,2,0,.7));for(let i=0;i<8;i++){const a=i*Math.PI/4;out.push(...move(stroke(petal(7,1.8),.55,true),0,7,a));}return normalize(out);}
 function viennaTile(){let p=rosette(15);for(let i=0;i<4;i++){const a=i*Math.PI/2;p.push(...move(curl(),19*Math.cos(a),19*Math.sin(a),a+Math.PI/4,.64));p.push(...move(paisley(),35*Math.cos(a+.78),35*Math.sin(a+.78),a+2.25,.82));}return normalize(p);}
@@ -32,36 +32,46 @@ function diamonds(){return normalize([...stroke([V(0,-12),V(8,0),V(0,12),V(-8,0)
 function pearls(){let p=stroke(circle(10),.85,true);for(let i=0;i<12;i++)p.push(...move(filled(circle(.8,12)),...Object.values(polar(13,i*Math.PI/6))));return normalize(p);}
 function petals(){let p=[];for(let i=0;i<4;i++)p.push(...move(stroke(petal(12,4),.9,true),0,0,i*Math.PI/2));return normalize(p);}
 function waveRibbon(){let p=[];for(let y of [-5,5])p.push(...stroke(Array.from({length:65},(_,i)=>V(-18+i*36/64,y+3*Math.sin(i/64*Math.PI*2))),.9));return normalize(p);}
+// Botanical building blocks. Dense sheets are made by overlapping these motifs;
+// they deliberately have no background lattice or filler grid.
+function roseBloom(r=13){const ring=(radius,lobes,depth,phase=0)=>stroke(Array.from({length:96},(_,i)=>{const a=i*Math.PI*2/96;return polar(radius+depth*Math.sin(lobes*a+phase),a);}),.9,true);const spiral=[];for(let i=0;i<72;i++){const a=i*Math.PI*2*1.65/71,rr=.7+i/71*r*.31;spiral.push(polar(rr,a));}return normalize([...ring(r*.92,5,r*.16,.2),...ring(r*.62,4,r*.12,.8),...ring(r*.34,3,r*.08,1.4),...stroke(spiral,.85)]);}
+function leaf(l=13,w=3.8){return stroke(petal(l,w),.85,true);}
+function leafySprig(scale=1){let p=stroke(bezier(V(-2,24),V(2,9),V(-4,-6),V(1,-25)),1.05);for(let i=0;i<7;i++){const t=.12+i*.12,stem=bezier(V(-2,24),V(2,9),V(-4,-6),V(1,-25),40),at=stem[Math.round(t*40)];for(const side of[-1,1])p.push(...move(leaf(9,2.7),at.X,at.Y,side>0?-.55:-2.55,.78));}return normalize(p.map(r=>r.map(v=>V(v.X*scale,v.Y*scale))));}
+function blossomBranch(){let p=leafySprig(.9);for(const [x,y,a,s] of [[0,10,.1,.48],[3,-4,1.1,.42],[-1,-16,-.5,.38]])p.push(...move(roseBloom(11),x,y,a,s));return normalize(p);}
+function scrollStem(){let p=[];const a=[...bezier(V(-25,7),V(-10,-18),V(16,-18),V(18,-2)),...bezier(V(18,-2),V(20,12),V(4,13),V(5,3)).slice(1)];p.push(...stroke(a,1.1));for(let i=0;i<5;i++){const q=a[Math.floor((i+2)*a.length/7)];p.push(...move(leaf(10,3),q.X,q.Y,i%2?-.4:-2.65,.8));}p.push(...move(roseBloom(12),-23,7,-.6,.62),...move(roseBloom(9),17,-1,1.5,.48));return normalize(p);}
+function orchid(){let p=stroke(bezier(V(0,21),V(-2,3),V(3,-8),V(0,-19)),1);for(const a of[-2.6,-1.7,-.8,.1,.8])p.push(...move(stroke(petal(17,4.4),.9,true),0,1,a));p.push(...filled(circle(2.7,20)));return normalize(p);}
+function treeBranch(){let p=stroke(bezier(V(-22,26),V(-7,10),V(8,-5),V(23,-25)),1.25);for(let i=0;i<8;i++){const t=.08+i*.11,x=-22+45*t,y=26-51*t+5*Math.sin(t*4);p.push(...move(leaf(10,3.1),x,y,i%2?-.5:-2.6,.86));if(i===2||i===5)p.push(...move(roseBloom(9),x,y,i,.38));}return normalize(p);}
+function botanicalMedallion(){let p=rosette(18);for(let i=0;i<4;i++){const a=i*Math.PI/2;p.push(...move(scrollStem(),24*Math.cos(a),24*Math.sin(a),a,.63));}return normalize(p);}
+function gardenCluster(){let p=[...move(roseBloom(17),0,0,0,.92),...move(roseBloom(12),-18,13,-.8,.68),...move(roseBloom(10),18,14,.9,.58),...move(leafySprig(),-27,10,-.55,.72),...move(leafySprig(),27,12,.55,.72)];return normalize(p);}
 const definitions=[
-{id:'daisy-air',name:'Ромашковое поле',group:'simple',tile:daisy,step:42,description:'Небольшие цветы и открытая ткань'},
-{id:'olive-air',name:'Оливковая ветвь',group:'simple',tile:()=>branch(true),step:48,description:'Гладкие листья на тонких стеблях'},
-{id:'fern-air',name:'Лёгкий папоротник',group:'simple',tile:()=>branch(false),step:46,description:'Прозрачные веточки без фоновой сетки'},
-{id:'hearts-air',name:'Нежные сердца',group:'simple',tile:heart,step:43,description:'Крупные контурные сердца'},
-{id:'stars-air',name:'Звёздный вечер',group:'simple',tile:star,step:35,description:'Звёзды на свободном поле'},
-{id:'diamonds-air',name:'Тихие ромбы',group:'simple',tile:diamonds,step:32,description:'Лаконичная геометрия с жемчужиной'},
-{id:'pearls-air',name:'Жемчужные кольца',group:'simple',tile:pearls,step:39,description:'Круги с небольшими бусинами'},
-{id:'petals-air',name:'Четыре лепестка',group:'simple',tile:petals,step:37,description:'Простой цветочный ритм'},
-{id:'lily-air',name:'Белые лилии',group:'simple',tile:lily,step:47,description:'Отдельные лилии с крупными просветами'},
-{id:'ribbons-air',name:'Шёлковые ленты',group:'simple',tile:waveRibbon,step:42,description:'Плавные линии без мелкого декора'},
-{id:'vienna',name:'Венское кружево',group:'dense',tile:viennaTile,step:83,net:7,description:'Розетки, пейсли и ажурные связи'},
-{id:'rose-garden',name:'Садовые розы',group:'dense',tile:roseTile,step:78,net:8,description:'Розы в переплетении листьев'},
-{id:'peacock',name:'Павлинье перо',group:'dense',tile:feather,step:52,net:7,description:'Выразительные перья на косой сетке'},
-{id:'damask',name:'Королевский дамаск',group:'dense',tile:damask,step:51,net:7,description:'Лилии, завитки и симметрия'},
-{id:'paisley',name:'Восточный пейсли',group:'dense',tile:()=>{let p=[];for(let i=0;i<4;i++)p.push(...move(paisley(),...Object.values(polar(16,i*Math.PI/2)),i*Math.PI/2,.85));return normalize(p);},step:58,net:7,description:'Переплетённые капли с цветочной серединой'},
-{id:'fern-lace',name:'Лесное кружево',group:'dense',tile:()=>{let p=[];for(let i=0;i<4;i++)p.push(...move(branch(false),...Object.values(polar(14,i*Math.PI/2)),i*Math.PI/2,.85));return normalize(p);},step:48,net:6,description:'Венки из ажурных веточек'},
-{id:'medallion',name:'Кружевной медальон',group:'dense',tile:()=>rosette(20),step:48,net:6,description:'Большие круглые розетки'},
-{id:'arabesque',name:'Золотая арабеска',group:'dense',tile:arabesque,step:51,net:6,description:'Четыре переплетённых растительных завитка'},
-{id:'hydrangea',name:'Цветочный букет',group:'dense',tile:bouquet,step:56,net:7,description:'Группы мелких цветов и листьев'},
-{id:'fans',name:'Веера ар-деко',group:'dense',tile:fan,step:39,net:6,description:'Радиальные веера с цветочным основанием'}
+{id:'daisy-air',name:'Ромашковый луг',group:'simple',tile:daisy,step:46,description:'Отдельные ромашки на открытом тюле'},
+{id:'rose-air',name:'Рассыпанные розы',group:'simple',tile:()=>move(roseBloom(14),0,0,0,.62),step:49,description:'Небольшие розы с видимыми лепестками'},
+{id:'olive-air',name:'Оливковая ветвь',group:'simple',tile:()=>branch(true),step:52,description:'Гладкие листья на тонком стебле'},
+{id:'fern-air',name:'Лёгкий папоротник',group:'simple',tile:()=>leafySprig(.72),step:55,description:'Ажурные веточки с большими просветами'},
+{id:'lily-air',name:'Белые лилии',group:'simple',tile:lily,step:55,description:'Отдельные лилии с крупными лепестками'},
+{id:'orchid-air',name:'Орхидеи',group:'simple',tile:()=>move(orchid(),0,0,0,.62),step:58,description:'Редкие орхидеи на свободном поле'},
+{id:'blossom-air',name:'Цветущая ветка',group:'simple',tile:()=>move(blossomBranch(),0,0,0,.62),step:61,description:'Бутоны и листья на тонкой ветке'},
+{id:'willow-air',name:'Ивовая ветвь',group:'simple',tile:()=>move(treeBranch(),0,0,0,.58),step:63,description:'Листья и небольшие цветы на дуге'},
+{id:'petals-air',name:'Четыре лепестка',group:'simple',tile:petals,step:45,description:'Минималистичный цветочный ритм'},
+{id:'ribbons-air',name:'Шёлковые ленты',group:'simple',tile:waveRibbon,step:50,description:'Плавные линии как лёгкие стебли'},
+{id:'vienna',name:'Венский сад',group:'dense',tile:botanicalMedallion,step:54,description:'Розетки, листья и завитки без фоновой сетки'},
+{id:'rose-garden',name:'Розарий',group:'dense',tile:gardenCluster,step:60,description:'Перекрывающиеся розы, листья и стебли'},
+{id:'peacock',name:'Лесные ветви',group:'dense',tile:()=>normalize([...move(treeBranch(),-18,0,-.22,1),...move(treeBranch(),18,0,.22,1),...move(roseBloom(13),0,1,0,.72)]),step:58,description:'Густые ветви с цветущими акцентами'},
+{id:'damask',name:'Королевские лилии',group:'dense',tile:()=>normalize([...move(lily(),0,0,0,1.2),...move(scrollStem(),-20,7,-.2,.88),...move(scrollStem(),20,7,Math.PI+.2,.88)]),step:54,description:'Лилии, листья и текучие завитки'},
+{id:'paisley',name:'Пейсли в цветах',group:'dense',tile:()=>normalize([...move(paisley(),-14,0,-.3,1.05),...move(paisley(),14,0,Math.PI+.3,1.05),...move(roseBloom(13),0,0,0,.74),...move(leafySprig(),0,8,0,.78)]),step:56,description:'Капли пейсли с розой и листвой'},
+{id:'fern-lace',name:'Лесная гирлянда',group:'dense',tile:()=>normalize([...move(leafySprig(),-15,0,-.55,1),...move(leafySprig(),15,0,.55,1),...move(blossomBranch(),0,0,0,.88)]),step:52,description:'Плотное переплетение ветвей, листьев и бутонов'},
+{id:'medallion',name:'Цветочный медальон',group:'dense',tile:()=>normalize([...move(roseBloom(18),0,0,0,1),...move(leaf(16,4),0,-22,-1.57),...move(leaf(16,4),0,22,1.57),...move(leaf(16,4),-22,0,Math.PI),...move(leaf(16,4),22,0,0)]),step:50,description:'Крупная роза в лиственном венке'},
+{id:'arabesque',name:'Садовая арабеска',group:'dense',tile:()=>normalize([...move(scrollStem(),0,0,0,1.05),...move(scrollStem(),0,0,Math.PI,1.05),...move(roseBloom(11),0,0,0,.62)]),step:50,description:'Непрерывные завитки с листьями и розами'},
+{id:'hydrangea',name:'Букет на тюле',group:'dense',tile:()=>normalize([...move(gardenCluster(),0,0,0,1),...move(blossomBranch(),-22,9,-.75,.78),...move(blossomBranch(),22,9,.75,.78)]),step:62,description:'Розы, бутоны и листва в цельном букете'},
+{id:'fans',name:'Орхидейный виток',group:'dense',tile:()=>normalize([...move(orchid(),-13,0,-.35,.9),...move(orchid(),13,0,.35,.9),...move(scrollStem(),0,0,0,.95),...move(scrollStem(),0,0,Math.PI,.95)]),step:54,description:'Орхидеи, листья и симметричные завихрения'}
 ];
 function crop(paths,step){const c=new C.Clipper(),out=[];c.AddPaths(paths,C.PolyType.ptSubject,true);c.AddPath([V(-step*S/2,-step*S/2),V(step*S/2,-step*S/2),V(step*S/2,step*S/2),V(-step*S/2,step*S/2)],C.PolyType.ptClip,true);c.Execute(C.ClipType.ctIntersection,out,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);return out;}
 const pathString=paths=>paths.map(r=>r.map((v,i)=>(i?'L':'M')+v.X+','+v.Y).join('')+'Z').join('');
 const assets=[];fs.mkdirSync('public/designs',{recursive:true});
-for(const d of definitions){let tile=d.tile();if(d.group==='dense'){const co=new C.ClipperOffset(2,40),thick=[];co.AddPaths(tile,C.JoinType.jtRound,C.EndType.etClosedPolygon);co.Execute(thick,120);tile=thick;}
+for(const d of definitions){let tile=d.tile();if(d.group==='dense'){const co=new C.ClipperOffset(2,40),thick=[];co.AddPaths(tile,C.JoinType.jtRound,C.EndType.etClosedPolygon);co.Execute(thick,280);tile=thick;}
 let repeats=[];for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++)repeats.push(...move(tile,x*d.step,y*d.step));let motifs=crop(normalize(repeats),d.step),master=motifs;
-if(d.net){const grid=[];const n=Math.round(d.step/d.net),spacing=d.step/n;for(let b=-d.step*2;b<=d.step*2+.01;b+=spacing)for(const slope of [-1,1])grid.push(...stroke([V(-d.step,slope*-d.step+b),V(d.step,slope*d.step+b)],.75));const co=new C.ClipperOffset(2,40),mask=[];co.AddPaths(motifs,C.JoinType.jtRound,C.EndType.etClosedPolygon);co.Execute(mask,650);const c=new C.Clipper(),cut=[];c.AddPaths(grid,C.PolyType.ptSubject,true);c.AddPaths(mask,C.PolyType.ptClip,true);c.Execute(C.ClipType.ctDifference,cut,C.PolyFillType.pftNonZero,C.PolyFillType.pftNonZero);master=crop(normalize([...motifs,...cut]),d.step);}
 const coverage=Math.round(Math.abs(master.reduce((sum,r)=>sum+C.Clipper.Area(r),0))/(d.step*d.step*S*S)*100);
-const paths=master.map(r=>r.map(v=>V(v.X/S,v.Y/S)));assets.push({id:d.id,name:d.name,category:d.group==='simple'?'Простые':'Плотные',group:d.group,description:d.description,tags:[d.group,'готовое полотно'],repeatStep:d.step,coverage,viewBox:[-200,-200,400,400],paths,preview:'/designs/'+d.id+'.svg',license:'CC0-1.0; original procedural CAD lace',revision:2,minFeature:.65});
+const paths=master.map(r=>r.map(v=>V(v.X/S,v.Y/S)));assets.push({id:d.id,name:d.name,category:d.group==='simple'?'Простые':'Плотные',group:d.group,description:d.description,tags:[d.group,'ботаника','без сетки'],repeatStep:d.step,coverage,construction:'motifs',viewBox:[-200,-200,400,400],paths,preview:'/designs/'+d.id+'.svg',license:'CC0-1.0; original procedural CAD lace',revision:3,minFeature:.65});
 // A periodic preview shows the actual motif scale and open-fabric ratio.
 const path=pathString(paths);fs.writeFileSync('public/designs/'+d.id+'.svg',`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-75 -75 150 150"><defs><pattern id="lace" x="${-d.step/2}" y="${-d.step/2}" width="${d.step}" height="${d.step}" patternUnits="userSpaceOnUse" viewBox="${-d.step/2} ${-d.step/2} ${d.step} ${d.step}"><path fill="#fff7e8" fill-rule="nonzero" d="${path}"/></pattern></defs><rect x="-75" y="-75" width="150" height="150" fill="#544d50"/><rect x="-75" y="-75" width="150" height="150" fill="url(#lace)"/></svg>`);console.log(d.group,d.id,coverage+'%',paths.reduce((n,r)=>n+r.length,0),'vertices/tile');}
 fs.writeFileSync('src/library/designs.json',JSON.stringify(assets));
